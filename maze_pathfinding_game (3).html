@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maze Pathfinding Game</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#1a1a1a;color:#e0e0e0;font-family:'Segoe UI',sans-serif;padding:20px;min-height:100vh;}
+h1{font-size:20px;font-weight:600;color:#fff;margin-bottom:3px;}
+.subtitle{font-size:13px;color:#666;margin-bottom:14px;}
+
+/* Mode selector */
+#mode-row{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;}
+.seg{display:flex;border:1px solid #444;border-radius:8px;overflow:hidden;}
+.seg-btn{background:#222;color:#888;border:none;padding:6px 18px;cursor:pointer;font-size:13px;font-weight:500;transition:background .15s,color .15s;}
+.seg-btn.on{background:#333;color:#fff;}
+.seg-btn:hover:not(.on){background:#2a2a2a;color:#bbb;}
+
+/* Action buttons */
+.btn{background:#2a2a2a;color:#e0e0e0;border:1px solid #444;padding:6px 13px;border-radius:6px;cursor:pointer;font-size:13px;transition:background .15s;}
+.btn:hover{background:#333;}
+.btn.danger{border-color:#6a2222;color:#ff8080;}
+.btn.danger:hover{background:#2a1818;}
+
+/* Challenge picker */
+#challenge-section{margin-bottom:12px;}
+#challenge-section .label{font-size:12px;color:#666;margin-bottom:6px;}
+#challenge-pills{display:flex;gap:6px;flex-wrap:wrap;}
+.pill{padding:5px 13px;border-radius:20px;border:1.5px solid #333;background:#222;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;user-select:none;}
+.pill:hover{background:#2a2a2a;}
+.pill.on{background:#2a2a2a;}
+
+/* Scoreboard */
+#scoreboard{margin-bottom:12px;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;}
+#scoreboard .sb-title{font-size:12px;color:#555;font-weight:600;letter-spacing:.5px;margin-bottom:10px;text-transform:uppercase;}
+.sb-row{display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap;}
+.sb-row:last-child{margin-bottom:0;}
+.sb-label{font-size:12px;color:#888;min-width:80px;}
+.sb-score{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;}
+.sb-sep{color:#444;font-size:13px;}
+.sb-pts{font-size:11px;color:#555;margin-left:2px;}
+.sb-combined{font-size:11px;color:#555;margin-left:10px;}
+.sb-divider{border:none;border-top:1px solid #252525;margin:7px 0;}
+
+/* Card panel */
+#algo-panel{display:grid;gap:8px;margin-bottom:12px;}
+.algo-card{background:#222;border-radius:8px;padding:10px 12px;border:1.5px solid #333;cursor:pointer;user-select:none;transition:border-color .15s,background .15s;}
+.algo-card:hover:not(.player-card){background:#2a2a2a;}
+.algo-card.active{background:#2a2a2a;}
+.algo-card.player-card{cursor:default;}
+.algo-card.locked{cursor:not-allowed;opacity:.7;}
+.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;}
+.algo-name{font-size:13px;font-weight:600;}
+.algo-tag{font-size:10px;font-weight:600;letter-spacing:.4px;}
+.algo-steps{font-size:12px;color:#666;margin-top:3px;min-height:16px;}
+.algo-time{font-size:11px;color:#555;margin-top:1px;min-height:14px;}
+.algo-pct{font-size:18px;font-weight:600;margin-top:4px;min-height:24px;}
+.rank-badge{font-size:10px;font-weight:700;background:#2e2e2e;color:#999;border-radius:4px;padding:1px 5px;margin-left:5px;vertical-align:middle;}
+.hidden-hint{font-size:11px;color:#444;font-style:italic;}
+
+/* Canvas */
+#maze-wrap{display:flex;justify-content:center;margin-bottom:12px;}
+canvas{border:1px solid #333;border-radius:4px;display:block;}
+
+/* Legend */
+#legend{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
+.leg{display:flex;align-items:center;gap:5px;font-size:12px;color:#888;}
+.leg-sq{width:11px;height:11px;border-radius:2px;flex-shrink:0;}
+
+#msg{font-size:13px;color:#aaa;min-height:18px;line-height:1.6;padding:2px 0 4px;}
+#controls-hint{font-size:12px;color:#555;margin-bottom:10px;min-height:16px;}
+</style>
+</head>
+<body>
+
+<h1>Maze Pathfinding Game</h1>
+<p class="subtitle">Navigate from S to E — challenge algorithms, race a friend, track your score.</p>
+
+<div id="mode-row">
+  <div class="seg">
+    <button class="seg-btn on" onclick="setMode('single')">Single player</button>
+    <button class="seg-btn" onclick="setMode('two')">2 players</button>
+  </div>
+  <button class="btn" onclick="newMaze()">&#8635; New maze</button>
+  <button class="btn" onclick="resetGame()">&#9654; Reset positions</button>
+  <button class="btn danger" onclick="resetScores()">&#10005; Reset scores</button>
+</div>
+
+<div id="challenge-section">
+  <div class="label">Challenge algorithms (optional — track score vs selected):</div>
+  <div id="challenge-pills"></div>
+</div>
+
+<div id="scoreboard" style="display:none;"></div>
+<div id="controls-hint"></div>
+<div id="algo-panel"></div>
+<div id="maze-wrap"><canvas id="c"></canvas></div>
+<div id="legend"></div>
+<div id="msg"></div>
+
+<script>
+const ROWS=21,COLS=27,CELL=24;
+const canvas=document.getElementById('c');
+const ctx=canvas.getContext('2d');
+canvas.width=COLS*CELL; canvas.height=ROWS*CELL;
+const START={r:1,c:1},END={r:ROWS-2,c:COLS-2};
+
+let grid,gameWon,gameMode='single';
+let algoPaths={},algoTimes={},algoVisible={};
+let players=[];
+let challengedAlgos=new Set();
+let liveTimerInterval=null;
+
+// scores[algoKey] = { p1:{steps,time}, p2:{steps,time} }  (wins per category)
+// scores._p1p2 = { steps, time }  (2-player head to head)
+let scores={};
+
+const ALGO_META=[
+  {key:'bfs',   label:'BFS',   tag:'SHORTEST',   color:'#4aa8ff',dim:'rgba(74,168,255,0.28)',  border:'#1a6fb5'},
+  {key:'dfs',   label:'DFS',   tag:'EXPLORATORY',color:'#ff7a4a',dim:'rgba(255,122,74,0.28)',  border:'#b54a1a'},
+  {key:'greedy',label:'Greedy',tag:'HEURISTIC',  color:'#7acc44',dim:'rgba(122,204,68,0.28)',  border:'#3a8a1a'},
+];
+const PLAYER_META=[
+  {key:'p1',label:'Player 1',tag:'',color:'#ffbe00',dim:'rgba(255,190,0,0.32)',  border:'#b87a00'},
+  {key:'p2',label:'Player 2',tag:'',color:'#d966ff',dim:'rgba(217,102,255,0.32)',border:'#8833bb'},
+];
+
+function pkey(p){return p.r+','+p.c;}
+function nbrs(r,c){return[[-1,0],[1,0],[0,-1],[0,1]].map(([dr,dc])=>({r:r+dr,c:c+dc})).filter(p=>p.r>=0&&p.r<ROWS&&p.c>=0&&p.c<COLS&&grid[p.r][p.c]===0);}
+
+function runBFS(s,e){const q=[[s,[s]]],seen=new Set([pkey(s)]);while(q.length){const[pos,path]=q.shift();if(pos.r===e.r&&pos.c===e.c)return path;for(const n of nbrs(pos.r,pos.c)){const k=pkey(n);if(!seen.has(k)){seen.add(k);q.push([n,[...path,n]]);}}}return null;}
+function runDFS(s,e){const st=[[s,[s]]],seen=new Set([pkey(s)]);while(st.length){const[pos,path]=st.pop();if(pos.r===e.r&&pos.c===e.c)return path;for(const n of nbrs(pos.r,pos.c).sort(()=>Math.random()-.5)){const k=pkey(n);if(!seen.has(k)){seen.add(k);st.push([n,[...path,n]]);}}}return null;}
+function runGreedy(s,e){const h=p=>Math.abs(p.r-e.r)+Math.abs(p.c-e.c),open=[[h(s),s,[s]]],seen=new Set([pkey(s)]);while(open.length){open.sort((a,b)=>a[0]-b[0]);const[,pos,path]=open.shift();if(pos.r===e.r&&pos.c===e.c)return path;for(const n of nbrs(pos.r,pos.c)){const k=pkey(n);if(!seen.has(k)){seen.add(k);open.push([h(n),n,[...path,n]]);}}}return null;}
+
+function timeAlgo(fn,s,e){const t0=performance.now();const p=fn(s,e);const t1=performance.now();return{path:p,ms:+(t1-t0).toFixed(3)};}
+
+function setMode(m){
+  gameMode=m;
+  document.querySelectorAll('.seg-btn').forEach((b,i)=>{b.classList.toggle('on',(i===0&&m==='single')||(i===1&&m==='two'));});
+  PLAYER_META[0].tag= m==='single'?'WASD / ARROWS':'WASD';
+  PLAYER_META[1].tag='ARROW KEYS';
+  renderChallengePills();
+  newMaze();
+}
+
+function initScores(){
+  ALGO_META.forEach(a=>{
+    if(!scores[a.key]) scores[a.key]={p1:{steps:0,time:0},p2:{steps:0,time:0},algo:{steps:0,time:0}};
+  });
+  if(!scores._p1p2) scores._p1p2={p1steps:0,p2steps:0,p1time:0,p2time:0};
+}
+
+function resetScores(){
+  scores={};
+  initScores();
+  renderScoreboard();
+}
+
+function newMaze(){
+  grid=Array.from({length:ROWS},()=>Array(COLS).fill(1));
+  const carve=(r,c)=>{for(const[dr,dc] of [[0,2],[0,-2],[2,0],[-2,0]].sort(()=>Math.random()-.5)){const nr=r+dr,nc=c+dc;if(nr>0&&nr<ROWS-1&&nc>0&&nc<COLS-1&&grid[nr][nc]===1){grid[nr][nc]=0;grid[r+dr/2][c+dc/2]=0;carve(nr,nc);}}};
+  grid[1][1]=0;carve(1,1);grid[END.r][END.c]=0;
+  let ex=Math.floor(ROWS*COLS*.045);
+  while(ex-->0){const r=1+Math.floor(Math.random()*(ROWS-2)),c=1+Math.floor(Math.random()*(COLS-2));if(r>0&&r<ROWS-1&&c>0&&c<COLS-1)grid[r][c]=0;}
+
+  algoPaths={};algoTimes={};algoVisible={};
+  stopLiveTimer();
+  ALGO_META.forEach(a=>{
+    algoVisible[a.key]=false;
+    const res=timeAlgo(a.key==='bfs'?runBFS:a.key==='dfs'?runDFS:runGreedy,START,END);
+    algoPaths[a.key]=res.path;algoTimes[a.key]=res.ms;
+  });
+  gameWon=false;
+  initScores();
+  initPlayers();
+  renderHint();
+  renderLegend();
+  renderPanel();
+  renderScoreboard();
+  document.getElementById('msg').textContent=gameMode==='single'
+    ?'Navigate to the exit. Complete the maze to reveal algorithm results!'
+    :'Both players must reach the exit. P1: WASD  |  P2: Arrow keys';
+  draw();
+}
+
+function initPlayers(){
+  const count=gameMode==='two'?2:1;
+  players=[];
+  for(let i=0;i<count;i++){
+    players.push({
+      ...PLAYER_META[i],
+      pos:{r:START.r,c:START.c},
+      path:[{r:START.r,c:START.c}],
+      visited:new Set([pkey(START)]),
+      done:false,
+      startTime:null,
+      elapsedMs:null,
+    });
+  }
+}
+
+function resetGame(){
+  gameWon=false;
+  stopLiveTimer();
+  ALGO_META.forEach(a=>{algoVisible[a.key]=false;});
+  initPlayers();
+  renderPanel();
+  document.getElementById('msg').textContent=gameMode==='single'
+    ?'Navigate to the exit. Complete the maze to reveal algorithm results!'
+    :'Both players must reach the exit. P1: WASD  |  P2: Arrow keys';
+  draw();
+}
+
+function renderHint(){
+  document.getElementById('controls-hint').textContent=
+    gameMode==='single'?'Controls: WASD or Arrow keys':'Player 1: WASD   |   Player 2: Arrow keys';
+}
+
+function renderChallengePills(){
+  const wrap=document.getElementById('challenge-pills');
+  wrap.innerHTML='';
+  ALGO_META.forEach(a=>{
+    const d=document.createElement('div');
+    d.className='pill'+(challengedAlgos.has(a.key)?' on':'');
+    d.style.borderColor=challengedAlgos.has(a.key)?a.border:'#333';
+    d.style.color=challengedAlgos.has(a.key)?a.color:'#888';
+    d.textContent=a.label;
+    d.onclick=()=>{
+      if(challengedAlgos.has(a.key))challengedAlgos.delete(a.key);
+      else challengedAlgos.add(a.key);
+      renderChallengePills();
+      renderScoreboard();
+      renderPanel();
+    };
+    wrap.appendChild(d);
+  });
+}
+
+function renderScoreboard(){
+  const sb=document.getElementById('scoreboard');
+  const hasChallenged=challengedAlgos.size>0;
+  const show2p=gameMode==='two';
+  if(!hasChallenged&&!show2p){sb.style.display='none';return;}
+  sb.style.display='block';
+  let html='<div class="sb-title">Scoreboard</div>';
+
+  // 2-player head-to-head
+  if(show2p){
+    const s=scores._p1p2;
+    const p1total=s.p1steps+s.p1time,p2total=s.p2steps+s.p2time;
+    html+=`<div class="sb-row">
+      <span class="sb-label" style="color:#888;">Head to head</span>
+      <span class="sb-score">
+        <span style="color:#ffbe00;">Player 1</span>
+        <span style="color:#ffbe00;margin-left:5px;">${p1total}</span>
+        <span class="sb-sep">–</span>
+        <span style="color:#d966ff;">${p2total}</span>
+        <span style="color:#d966ff;margin-left:5px;">Player 2</span>
+      </span>
+      <span class="sb-combined" style="color:#555;">steps: ${s.p1steps}–${s.p2steps} | time: ${s.p1time}–${s.p2time}</span>
+    </div>`;
+    if(hasChallenged) html+='<hr class="sb-divider">';
+  }
+
+  // Challenge scores
+  if(hasChallenged){
+    [...challengedAlgos].forEach(akey=>{
+      const am=ALGO_META.find(a=>a.key===akey);
+      const sc=scores[akey];
+      if(show2p){
+        // individual P1 and P2 vs algo
+        const p1tot=sc.p1.steps+sc.p1.time,p2tot=sc.p2.steps+sc.p2.time;
+        const teamTot=p1tot+p2tot;
+        // algo "wins" = rounds where algo beat that player (not tracked as wins for algo, shown as losses for player)
+        html+=`<div class="sb-row">
+          <span class="sb-label" style="color:${am.color};">vs ${am.label}</span>
+          <span class="sb-score">
+            <span style="color:#ffbe00;">P1 ${p1tot}</span>
+            <span class="sb-sep">/</span>
+            <span style="color:#d966ff;">P2 ${p2tot}</span>
+          </span>
+          <span class="sb-combined">team ${teamTot} pts | P1: s${sc.p1.steps} t${sc.p1.time} | P2: s${sc.p2.steps} t${sc.p2.time}</span>
+        </div>`;
+      } else {
+        const p1tot=sc.p1.steps+sc.p1.time;
+        const algoTot=sc.algo?sc.algo.steps+sc.algo.time:0;
+        html+=`<div class="sb-row">
+          <span class="sb-label" style="color:${am.color};">vs ${am.label}</span>
+          <span class="sb-score">
+            <span style="color:#ffbe00;">YOU ${p1tot}</span>
+            <span class="sb-sep">–</span>
+            <span style="color:${am.color};">${algoTot} ${am.label.toUpperCase()}</span>
+          </span>
+          <span class="sb-combined">steps pts: ${sc.p1.steps} | time pts: ${sc.p1.time}</span>
+        </div>`;
+      }
+    });
+  }
+
+  sb.innerHTML=html;
+}
+
+function renderPanel(){
+  const panel=document.getElementById('algo-panel');
+  const allDone=players.every(p=>p.done);
+
+  const algoCards=ALGO_META.map(a=>({
+    key:a.key,label:a.label,tag:a.tag,color:a.color,border:a.border,
+    steps:algoPaths[a.key]?algoPaths[a.key].length-1:null,
+    ms:algoTimes[a.key]??null,
+    isAlgo:true,
+  }));
+  const playerCards=players.map(p=>({
+    key:p.key,label:p.label,tag:p.tag,color:p.color,border:p.border,
+    steps:p.path.length-1,
+    ms:p.elapsedMs,
+    isAlgo:false,
+  }));
+
+  let cards=[...algoCards,...playerCards];
+  if(allDone){
+    cards.sort((a,b)=>(a.steps??9999)-(b.steps??9999));
+  } else {
+    cards.sort((a,b)=>a.label.localeCompare(b.label));
+  }
+
+  const totalCols=gameMode==='two'?5:4;
+  panel.style.gridTemplateColumns=`repeat(${totalCols},1fr)`;
+  panel.innerHTML='';
+
+  cards.forEach((card,idx)=>{
+    const div=document.createElement('div');
+    const isLocked=card.isAlgo&&!allDone;
+    div.className='algo-card'+(card.isAlgo&&!isLocked?' ':(card.isAlgo?'':' player-card'))+(algoVisible[card.key]?' active':'')+(isLocked?' locked':'');
+    div.id='card-'+card.key;
+    if(card.isAlgo) div.onclick=()=>{ if(!gameWon)return; toggleAlgo(card.key); };
+
+    const rankBadge=allDone?`<span class="rank-badge">#${idx+1}</span>`:'';
+    const challenged=challengedAlgos.has(card.key);
+    const challengeDot=challenged&&card.isAlgo?`<span style="font-size:9px;color:${card.color};margin-left:4px;">&#9679; CHALLENGED</span>`:'';
+
+    let stepsHtml,timeHtml,pctHtml;
+
+    if(card.isAlgo){
+      if(allDone){
+        stepsHtml=`<div class="algo-steps">${card.steps!==null?card.steps+' steps':'no path'}</div>`;
+        timeHtml=`<div class="algo-time">${card.ms!==null?card.ms+'ms':''}</div>`;
+        const ref=players[0].path.length-1;
+        const pct=ref>0&&card.steps!==null?Math.round(card.steps/ref*100):null;
+        pctHtml=`<div class="algo-pct" style="color:${card.color};">${pct!==null?pct+'% of P1':'—'}</div>`;
+      } else {
+        stepsHtml=`<div class="algo-steps hidden-hint">hidden until finish</div>`;
+        timeHtml=`<div class="algo-time"></div>`;
+        pctHtml=`<div class="algo-pct" style="color:${card.color};">—</div>`;
+      }
+    } else {
+      stepsHtml=`<div class="algo-steps">${card.steps} steps</div>`;
+      timeHtml=`<div class="algo-time" id="livetime-${card.key}">${card.ms!==null?card.ms+'ms':'⏱ starts on first move'}</div>`;
+      if(allDone){
+        const bfsSteps=algoPaths.bfs?algoPaths.bfs.length-1:null;
+        const eff=bfsSteps&&card.steps>0?Math.round(bfsSteps/card.steps*100):null;
+        pctHtml=`<div class="algo-pct" style="color:${card.color};">${eff!==null?eff+'% optimal':'—'}</div>`;
+      } else {
+        pctHtml=`<div class="algo-pct" style="color:${card.color};">—</div>`;
+      }
+    }
+
+    div.innerHTML=`
+      <div class="card-header">
+        <span class="algo-name" style="color:${card.color};">${card.label}${rankBadge}${challengeDot}</span>
+        <span class="algo-tag" style="color:${card.border};">${card.tag}</span>
+      </div>
+      ${stepsHtml}${timeHtml}${pctHtml}
+    `;
+    panel.appendChild(div);
+  });
+}
+
+function toggleAlgo(a){
+  if(!gameWon)return;
+  algoVisible[a]=!algoVisible[a];
+  const card=document.getElementById('card-'+a);
+  if(card)card.classList.toggle('active',algoVisible[a]);
+  draw();
+}
+
+function renderLegend(){
+  const items=[
+    ...ALGO_META.map(a=>({color:a.dim,label:a.label+' path'})),
+    ...PLAYER_META.slice(0,gameMode==='two'?2:1).map(p=>({color:p.dim,label:p.label+' path'})),
+    {color:'#185FA5',label:'Start (S)'},{color:'#0F6E56',label:'End (E)'},
+  ];
+  document.getElementById('legend').innerHTML=items.map(i=>
+    `<div class="leg"><div class="leg-sq" style="background:${i.color};"></div>${i.label}</div>`
+  ).join('');
+}
+
+function awardScores(){
+  const allDone=players.every(p=>p.done);
+  if(!allDone||challengedAlgos.size===0&&gameMode!=='two')return;
+
+  // 2-player head-to-head
+  if(gameMode==='two'&&players.length===2){
+    const p1=players[0],p2=players[1];
+    if(p1.path.length-1<p2.path.length-1) scores._p1p2.p1steps++;
+    else if(p2.path.length-1<p1.path.length-1) scores._p1p2.p2steps++;
+    if(p1.elapsedMs!==null&&p2.elapsedMs!==null){
+      if(p1.elapsedMs<p2.elapsedMs) scores._p1p2.p1time++;
+      else if(p2.elapsedMs<p1.elapsedMs) scores._p1p2.p2time++;
+    }
+  }
+
+  // vs challenged algos
+  challengedAlgos.forEach(akey=>{
+    const aSteps=algoPaths[akey]?algoPaths[akey].length-1:null;
+    const aMs=algoTimes[akey]??null;
+    players.forEach(pl=>{
+      const sc=scores[akey][pl.key];
+      if(aSteps!==null){
+        if(pl.path.length-1<aSteps) sc.steps++;
+        else if(pl.path.length-1>aSteps) scores[akey].algo.steps++;
+      }
+      if(aMs!==null&&pl.elapsedMs!==null){
+        if(pl.elapsedMs<aMs) sc.time++;
+        else if(pl.elapsedMs>aMs) scores[akey].algo.time++;
+      }
+    });
+  });
+}
+
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    ctx.fillStyle=grid[r][c]===1?'#111':'#2a2a28';
+    ctx.fillRect(c*CELL,r*CELL,CELL,CELL);
+  }
+  ALGO_META.forEach(a=>{
+    if(algoVisible[a.key]&&algoPaths[a.key]&&gameWon){
+      ctx.fillStyle=a.dim;
+      for(const p of algoPaths[a.key])ctx.fillRect(p.c*CELL+1,p.r*CELL+1,CELL-2,CELL-2);
+    }
+  });
+  players.forEach(p=>{
+    if(p.path.length>1){
+      ctx.fillStyle=p.dim;
+      for(const pt of p.path)ctx.fillRect(pt.c*CELL+1,pt.r*CELL+1,CELL-2,CELL-2);
+    }
+  });
+  ctx.fillStyle='#185FA5';ctx.fillRect(START.c*CELL+2,START.r*CELL+2,CELL-4,CELL-4);
+  ctx.fillStyle='#E6F1FB';ctx.font='bold 11px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText('S',START.c*CELL+CELL/2,START.r*CELL+CELL/2);
+  ctx.fillStyle='#0F6E56';ctx.fillRect(END.c*CELL+2,END.r*CELL+2,CELL-4,CELL-4);
+  ctx.fillStyle='#E1F5EE';ctx.fillText('E',END.c*CELL+CELL/2,END.r*CELL+CELL/2);
+  players.forEach(p=>{
+    if(!p.done){
+      ctx.fillStyle=p.color;ctx.beginPath();
+      ctx.arc(p.pos.c*CELL+CELL/2,p.pos.r*CELL+CELL/2,CELL/2-3,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#111';ctx.font='bold 9px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(p.label.slice(-1),p.pos.c*CELL+CELL/2,p.pos.r*CELL+CELL/2);
+    }
+  });
+}
+
+function startLiveTimer(){
+  if(liveTimerInterval)return;
+  liveTimerInterval=setInterval(()=>{
+    players.forEach(p=>{
+      if(p.startTime&&!p.done){
+        const el=document.getElementById('livetime-'+p.key);
+        if(el){
+          const ms=+(performance.now()-p.startTime).toFixed(0);
+          el.textContent=ms<1000?ms+'ms':(ms/1000).toFixed(2)+'s';
+        }
+      }
+    });
+  },100);
+}
+
+function stopLiveTimer(){
+  if(liveTimerInterval){clearInterval(liveTimerInterval);liveTimerInterval=null;}
+}
+
+function movePlayer(pkey_,dr,dc){
+  const p=players.find(pl=>pl.key===pkey_);
+  if(!p||p.done)return;
+  const nr=p.pos.r+dr,nc=p.pos.c+dc;
+  if(nr<0||nr>=ROWS||nc<0||nc>=COLS||grid[nr][nc]===1)return;
+  if(!p.startTime){p.startTime=performance.now();startLiveTimer();}
+  p.pos={r:nr,c:nc};
+  if(!p.visited.has(pkey(p.pos))){p.visited.add(pkey(p.pos));p.path.push({...p.pos});}
+
+  // live update player card steps
+  const card=document.getElementById('card-'+p.key);
+  if(card){const el=card.querySelector('.algo-steps');if(el)el.textContent=(p.path.length-1)+' steps';}
+
+  if(p.pos.r===END.r&&p.pos.c===END.c){
+    p.done=true;
+    p.elapsedMs=p.startTime?+(performance.now()-p.startTime).toFixed(0):null;
+    const allDone=players.every(pl=>pl.done);
+    if(allDone){
+      gameWon=true;
+      stopLiveTimer();
+      awardScores();
+      renderPanel();
+      renderScoreboard();
+      buildEndMsg();
+    } else {
+      document.getElementById('msg').textContent=`${p.label} reached the exit in ${p.path.length-1} steps (${p.elapsedMs}ms)! Waiting for the other player...`;
+      renderPanel();
+    }
+  }
+  draw();
+}
+
+function buildEndMsg(){
+  const bfsSteps=algoPaths.bfs?algoPaths.bfs.length-1:null;
+  const msgs=[];
+  if(gameMode==='single'){
+    const myS=players[0].path.length-1,myT=players[0].elapsedMs;
+    const eff=bfsSteps&&myS>0?Math.round(bfsSteps/myS*100):null;
+    msgs.push(`You finished in ${myS} steps (${myT}ms) — ${eff}% of BFS optimal.`);
+  } else {
+    const p1=players[0],p2=players[1];
+    const sWinner=p1.path.length-1<p2.path.length-1?'Player 1':p2.path.length-1<p1.path.length-1?'Player 2':'Tied';
+    const tWinner=p1.elapsedMs<p2.elapsedMs?'Player 1':p2.elapsedMs<p1.elapsedMs?'Player 2':'Tied';
+    msgs.push(`P1: ${p1.path.length-1} steps / ${p1.elapsedMs}ms  |  P2: ${p2.path.length-1} steps / ${p2.elapsedMs}ms`);
+    msgs.push(`Steps winner: ${sWinner}  |  Time winner: ${tWinner}`);
+  }
+  msgs.push('Click algorithm cards to toggle path overlays.');
+  document.getElementById('msg').textContent=msgs.join('  ');
+}
+
+document.addEventListener('keydown',e=>{
+  const p1map={w:[-1,0],s:[1,0],a:[0,-1],d:[0,1],W:[-1,0],S:[1,0],A:[0,-1],D:[0,1]};
+  const p2map={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]};
+  if(p2map[e.key]){
+    e.preventDefault();
+    if(gameMode==='two') movePlayer('p2',...p2map[e.key]);
+    else movePlayer('p1',...p2map[e.key]);
+  } else if(p1map[e.key]){
+    e.preventDefault();
+    movePlayer('p1',...p1map[e.key]);
+  }
+});
+
+canvas.setAttribute('tabindex','0');
+canvas.addEventListener('click',()=>canvas.focus());
+
+renderChallengePills();
+newMaze();
+</script>
+</body>
+</html>
